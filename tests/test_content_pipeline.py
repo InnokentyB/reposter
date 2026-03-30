@@ -58,7 +58,58 @@ class PlatformRendererTests(unittest.TestCase):
 
         self.assertEqual(result["error_code"], "content_not_supported")
 
+    def test_vk_renderer_allows_video_media_in_baseline(self) -> None:
+        post = canonical_post(
+            normalized_payload={"text": "Video post", "media": [{"type": "video", "file_id": "video-1"}]},
+        )
+
+        result = self.renderer.render(Platform.VK, post)
+
+        self.assertEqual(result["platform"], "vk")
+        self.assertEqual(result["media"][0]["type"], "video")
+
+    def test_ok_renderer_rejects_video_media_in_baseline(self) -> None:
+        post = canonical_post(
+            normalized_payload={"text": "Video post", "media": [{"type": "video", "file_id": "video-1"}]},
+        )
+
+        result = self.renderer.render(Platform.OK, post)
+
+        self.assertEqual(result["error_code"], "content_not_supported")
+
+    def test_threads_renderer_rejects_multiple_media_items(self) -> None:
+        post = canonical_post(
+            normalized_payload={
+                "text": "Album post",
+                "media": [
+                    {"type": "photo", "file_id": "photo-1"},
+                    {"type": "photo", "file_id": "photo-2"},
+                ],
+            },
+        )
+
+        result = self.renderer.render(Platform.THREADS, post)
+
+        self.assertEqual(result["error_code"], "content_not_supported")
+
+    def test_threads_renderer_rejects_video_media_in_baseline(self) -> None:
+        post = canonical_post(
+            normalized_payload={"text": "Video post", "media": [{"type": "video", "file_id": "video-1"}]},
+        )
+
+        result = self.renderer.render(Platform.THREADS, post)
+
+        self.assertEqual(result["error_code"], "content_not_supported")
+
+    def test_renderer_normalizes_whitespace_for_platform_output(self) -> None:
+        post = canonical_post(
+            normalized_payload={"text": " Hello   world \n\n from  Telegram ", "media": []},
+        )
+
+        result = self.renderer.render(Platform.VK, post)
+
+        self.assertEqual(result["text"], "Hello world from Telegram")
+
 
 if __name__ == "__main__":
     unittest.main()
-
