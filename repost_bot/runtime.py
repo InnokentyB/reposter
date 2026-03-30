@@ -33,5 +33,5 @@ def build_application(config: AppConfig | None = None) -> Application:
         telegram_adapter=telegram_adapter,
         orchestrator=orchestrator,
         delivery_worker=DeliveryWorker(),
-        health_service=HealthService(),
+        health_service=HealthService(repository=repository),
     )

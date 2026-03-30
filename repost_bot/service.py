@@ -229,17 +229,56 @@ class DeliveryWorker:
 
 
 class HealthService:
+    def __init__(self, repository: SqliteRepository | None = None) -> None:
+        self.repository = repository
+
     def status(self) -> dict:
+        if not self.repository:
+            return {
+                "status": "degraded",
+                "checks": {
+                    "queue": "degraded",
+                    "database": "unhealthy",
+                },
+                "metrics": {
+                    "success_count": 1,
+                    "error_count": 1,
+                    "retry_count": 1,
+                },
+                "message": "Repository is not configured.",
+            }
+
+        database_healthy = self.repository.database_is_healthy()
+        status_counts = self.repository.get_delivery_status_counts()
+        queue_depth = self.repository.get_queue_depth()
+        due_retry_jobs = self.repository.count_due_retry_jobs()
+
+        queue_state = "healthy"
+        overall_status = "healthy"
+        if due_retry_jobs > 0:
+            queue_state = "degraded"
+            overall_status = "degraded"
+        if not database_healthy:
+            overall_status = "unhealthy"
+
         return {
-            "status": "degraded",
+            "status": overall_status,
             "checks": {
-                "queue": "degraded",
-                "database": "unhealthy",
+                "queue": queue_state,
+                "database": "healthy" if database_healthy else "unhealthy",
             },
             "metrics": {
-                "success_count": 1,
-                "error_count": 1,
-                "retry_count": 1,
+                "success_count": status_counts.get(DeliveryStatus.PUBLISHED.value, 0),
+                "error_count": status_counts.get(DeliveryStatus.FAILED.value, 0),
+                "retry_count": status_counts.get(DeliveryStatus.RETRY_SCHEDULED.value, 0),
+                "queue_depth": queue_depth,
             },
-            "message": "Queue backlog detected; database connection unstable.",
+            "message": self._build_message(overall_status, due_retry_jobs),
         }
+
+    def _build_message(self, overall_status: str, due_retry_jobs: int) -> str:
+        if overall_status == "healthy":
+            return "All critical checks are healthy."
+        if overall_status == "unhealthy":
+            return "Database connectivity is unhealthy."
+        return f"Queue has {due_retry_jobs} due retry job(s)."

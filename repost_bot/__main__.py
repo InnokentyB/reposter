@@ -6,6 +6,7 @@ import json
 from repost_bot.admin_cli import render_status_report
 from repost_bot.config import AppConfig
 from repost_bot.runtime import build_application
+from repost_bot.service import HealthService
 from repost_bot.storage import SqliteRepository
 
 
@@ -17,6 +18,9 @@ def main(argv: list[str] | None = None) -> int:
     status_parser.add_argument("--database", dest="database_path")
     status_parser.add_argument("--limit", type=int, default=20)
 
+    health_parser = subparsers.add_parser("health")
+    health_parser.add_argument("--database", dest="database_path")
+
     args = parser.parse_args(argv)
 
     if args.command == "status":
@@ -25,6 +29,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             repository = SqliteRepository(AppConfig.from_env().database_path)
         print(render_status_report(repository, limit=args.limit))
+        return 0
+
+    if args.command == "health":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+        else:
+            repository = SqliteRepository(AppConfig.from_env().database_path)
+        print(json.dumps(HealthService(repository=repository).status(), ensure_ascii=False, indent=2))
         return 0
 
     app = build_application()

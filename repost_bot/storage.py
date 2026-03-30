@@ -392,6 +392,45 @@ class SqliteRepository:
             ).fetchall()
         return {row["status"]: int(row["count"]) for row in rows}
 
+    def database_is_healthy(self) -> bool:
+        try:
+            with self.connect() as connection:
+                connection.execute("SELECT 1").fetchone()
+            return True
+        except sqlite3.Error:
+            return False
+
+    def get_queue_depth(self) -> int:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM delivery_jobs
+                WHERE status IN (?, ?)
+                """,
+                (
+                    DeliveryStatus.PENDING.value,
+                    DeliveryStatus.RETRY_SCHEDULED.value,
+                ),
+            ).fetchone()
+        return int(row["count"])
+
+    def count_due_retry_jobs(self) -> int:
+        reference_time = datetime.utcnow().isoformat(timespec="seconds")
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM delivery_jobs
+                WHERE status = ? AND next_attempt_at IS NOT NULL AND next_attempt_at <= ?
+                """,
+                (
+                    DeliveryStatus.RETRY_SCHEDULED.value,
+                    reference_time,
+                ),
+            ).fetchone()
+        return int(row["count"])
+
     def list_stuck_delivery_jobs(self, limit: int = 20) -> list[sqlite3.Row]:
         reference_time = datetime.utcnow().isoformat(timespec="seconds")
         with self.connect() as connection:
