@@ -18,7 +18,7 @@ class StorageTests(unittest.TestCase):
             log_level="INFO",
             database_path=database_path,
             threads_enabled=False,
-            telegram_channel_id="tg-channel-1",
+            telegram_channel_ids=("tg-channel-1",),
             telegram_bot_token="telegram-secret-123",
             vk=PlatformCredentials(target_id="vk-community-1", access_token="vk-secret"),
             ok=PlatformCredentials(target_id="ok-group-1", access_token="ok-secret"),

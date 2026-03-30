@@ -34,6 +34,10 @@ def _require(name: str, file_values: dict[str, str]) -> str:
     return value
 
 
+def _parse_csv(raw_value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in raw_value.split(",") if part.strip())
+
+
 def mask_secret(secret: str) -> str:
     if len(secret) <= 4:
         return "*" * len(secret)
@@ -58,7 +62,7 @@ class AppConfig:
     log_level: str
     database_path: str
     threads_enabled: bool
-    telegram_channel_id: str
+    telegram_channel_ids: tuple[str, ...]
     telegram_bot_token: str
     vk: PlatformCredentials
     ok: PlatformCredentials
@@ -82,13 +86,20 @@ class AppConfig:
         )
         if not allowed_operators:
             raise ConfigurationError("ALLOWED_OPERATORS must contain at least one operator")
+        telegram_channels_raw = _load_value("TELEGRAM_CHANNEL_IDS", file_values)
+        if telegram_channels_raw in (None, ""):
+            telegram_channel_ids = (_require("TELEGRAM_CHANNEL_ID", file_values),)
+        else:
+            telegram_channel_ids = _parse_csv(telegram_channels_raw)
+            if not telegram_channel_ids:
+                raise ConfigurationError("TELEGRAM_CHANNEL_IDS must contain at least one channel id")
 
         return cls(
             app_env=app_env,
             log_level=log_level,
             database_path=_load_value("DATABASE_PATH", file_values, "var/repost-bot.sqlite3"),
             threads_enabled=_load_value("THREADS_ENABLED", file_values, "false").lower() == "true",
-            telegram_channel_id=_require("TELEGRAM_CHANNEL_ID", file_values),
+            telegram_channel_ids=telegram_channel_ids,
             telegram_bot_token=_require("TELEGRAM_BOT_TOKEN", file_values),
             vk=PlatformCredentials(
                 target_id=_require("VK_COMMUNITY_ID", file_values),
@@ -105,12 +116,17 @@ class AppConfig:
             allowed_operators=allowed_operators,
         )
 
+    @property
+    def telegram_channel_id(self) -> str:
+        return self.telegram_channel_ids[0]
+
     def masked(self) -> dict[str, object]:
         return {
             "app_env": self.app_env,
             "log_level": self.log_level,
             "database_path": self.database_path,
             "threads_enabled": self.threads_enabled,
+            "telegram_channel_ids": list(self.telegram_channel_ids),
             "telegram_channel_id": self.telegram_channel_id,
             "telegram_bot_token": mask_secret(self.telegram_bot_token),
             "vk": self.vk.masked(),

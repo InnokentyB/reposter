@@ -41,8 +41,24 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.log_level, "INFO")
         self.assertEqual(config.database_path, "var/repost-bot.sqlite3")
         self.assertFalse(config.threads_enabled)
+        self.assertEqual(config.telegram_channel_ids, ("tg-channel-1",))
+        self.assertEqual(config.telegram_channel_id, "tg-channel-1")
         self.assertEqual(config.allowed_operators, ("allowed-operator", "backup-operator"))
         self.assertEqual(config.vk.target_id, "vk-community-1")
+
+    def test_config_supports_multiple_telegram_source_channels(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            env_path = os.path.join(tempdir, ".env")
+            with open(env_path, "w", encoding="utf-8") as handle:
+                handle.write(self._env_payload().replace(
+                    "TELEGRAM_CHANNEL_ID=tg-channel-1",
+                    "TELEGRAM_CHANNEL_IDS=tg-channel-1, tg-channel-2",
+                ))
+
+            config = AppConfig.from_env(env_path)
+
+        self.assertEqual(config.telegram_channel_ids, ("tg-channel-1", "tg-channel-2"))
+        self.assertEqual(config.telegram_channel_id, "tg-channel-1")
 
     def test_env_variables_override_env_file_values(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -87,6 +103,20 @@ class ConfigTests(unittest.TestCase):
             app = build_application(config)
 
         self.assertIn("backup-operator", app.orchestrator.allowed_operators)
+
+    def test_build_application_uses_all_configured_telegram_channels(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            env_path = os.path.join(tempdir, ".env")
+            with open(env_path, "w", encoding="utf-8") as handle:
+                handle.write(self._env_payload().replace(
+                    "TELEGRAM_CHANNEL_ID=tg-channel-1",
+                    "TELEGRAM_CHANNEL_IDS=tg-channel-1,tg-channel-2",
+                ))
+
+            config = AppConfig.from_env(env_path)
+            app = build_application(config)
+
+        self.assertEqual(app.telegram_adapter.expected_channel_ids, ("tg-channel-1", "tg-channel-2"))
 
     def test_mask_secret_keeps_only_prefix_and_suffix_visible(self) -> None:
         self.assertEqual(mask_secret("abcd"), "****")

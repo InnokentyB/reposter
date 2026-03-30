@@ -8,7 +8,18 @@ from repost_bot.contracts import TelegramPost
 
 @dataclass(slots=True)
 class TelegramUpdateAdapter:
-    expected_channel_id: str
+    expected_channel_ids: tuple[str, ...] = ()
+    expected_channel_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.expected_channel_ids:
+            normalized_ids = self.expected_channel_ids
+        elif self.expected_channel_id:
+            normalized_ids = (self.expected_channel_id,)
+        else:
+            raise ValueError("At least one expected Telegram channel id must be configured")
+        object.__setattr__(self, "expected_channel_ids", tuple(str(value) for value in normalized_ids))
+        object.__setattr__(self, "expected_channel_id", self.expected_channel_ids[0])
 
     def parse_update(self, update: dict[str, Any]) -> TelegramPost | None:
         update_type = "channel_post"
@@ -24,7 +35,7 @@ class TelegramUpdateAdapter:
             return None
 
         chat_id = str(chat.get("id"))
-        if chat_id != self.expected_channel_id:
+        if chat_id not in self.expected_channel_ids:
             return None
 
         message_id = channel_post.get("message_id")

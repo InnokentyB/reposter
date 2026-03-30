@@ -21,6 +21,7 @@ class RepostOrchestrator:
     processed_posts: set[tuple[str, int]] = field(default_factory=set)
     allowed_operators: set[str] = field(default_factory=lambda: {"allowed-operator"})
     threads_enabled: bool = False
+    default_source_channel_id: str = "tg-channel-1"
     repository: SqliteRepository | None = None
 
     def ingest_telegram_post(self, post: TelegramPost) -> str:
@@ -54,7 +55,13 @@ class RepostOrchestrator:
 
         return source_post_id
 
-    def trigger_backfill(self, start_message_id: int, end_message_id: int, actor: str) -> list[str]:
+    def trigger_backfill(
+        self,
+        start_message_id: int,
+        end_message_id: int,
+        actor: str,
+        source_channel_id: str | None = None,
+    ) -> list[str]:
         if actor not in self.allowed_operators:
             return []
         if not self.repository:
@@ -63,19 +70,20 @@ class RepostOrchestrator:
             return []
         if end_message_id < start_message_id:
             return []
+        target_channel_id = source_channel_id or self.default_source_channel_id
 
         created: list[str] = []
         for message_id in range(start_message_id, end_message_id + 1):
-            if self.repository and self.repository.source_post_exists("tg-channel-1", message_id):
+            if self.repository and self.repository.source_post_exists(target_channel_id, message_id):
                 continue
 
             result = self.ingest_telegram_post(
                 TelegramPost(
-                    chat_id="tg-channel-1",
+                    chat_id=target_channel_id,
                     message_id=message_id,
                     text=f"Backfill message {message_id}",
                     payload={
-                        "chat_id": "tg-channel-1",
+                        "chat_id": target_channel_id,
                         "message_id": message_id,
                         "text": f"Backfill message {message_id}",
                         "entities": [],

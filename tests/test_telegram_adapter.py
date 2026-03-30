@@ -104,6 +104,23 @@ class TelegramUpdateAdapterTests(unittest.TestCase):
 
         self.assertIsNone(post)
 
+    def test_accepts_updates_from_any_configured_source_channel(self) -> None:
+        adapter = TelegramUpdateAdapter(expected_channel_ids=("tg-channel-1", "tg-channel-2"))
+        update = {
+            "update_id": 8,
+            "channel_post": {
+                "message_id": 2002,
+                "chat": {"id": "tg-channel-2", "type": "channel"},
+                "date": 1710000006,
+                "text": "Second channel post",
+            },
+        }
+
+        post = adapter.parse_update(update)
+
+        self.assertIsNotNone(post)
+        self.assertEqual(post.chat_id, "tg-channel-2")
+
     def test_ignores_non_channel_updates(self) -> None:
         update = {
             "update_id": 5,

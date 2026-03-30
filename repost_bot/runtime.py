@@ -22,9 +22,10 @@ def build_application(config: AppConfig | None = None) -> Application:
     resolved_config = config or AppConfig.from_env()
     repository = SqliteRepository(resolved_config.database_path)
     repository.seed_default_destinations(threads_enabled=resolved_config.threads_enabled)
-    telegram_adapter = TelegramUpdateAdapter(expected_channel_id=resolved_config.telegram_channel_id)
+    telegram_adapter = TelegramUpdateAdapter(expected_channel_ids=resolved_config.telegram_channel_ids)
     orchestrator = RepostOrchestrator(
         allowed_operators=set(resolved_config.allowed_operators),
+        default_source_channel_id=resolved_config.telegram_channel_id,
         repository=repository,
     )
     return Application(

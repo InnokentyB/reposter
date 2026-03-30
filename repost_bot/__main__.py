@@ -34,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     backfill_parser.add_argument("--database", dest="database_path")
     backfill_parser.add_argument("--start-message-id", type=int, required=True)
     backfill_parser.add_argument("--end-message-id", type=int, required=True)
+    backfill_parser.add_argument("--channel-id")
     backfill_parser.add_argument("--actor", required=True)
 
     args = parser.parse_args(argv)
@@ -88,11 +89,13 @@ def main(argv: list[str] | None = None) -> int:
         orchestrator = RepostOrchestrator(
             repository=repository,
             allowed_operators=allowed_operators,
+            default_source_channel_id=config.telegram_channel_id if not args.database_path else "tg-channel-1",
         )
         created = orchestrator.trigger_backfill(
             start_message_id=args.start_message_id,
             end_message_id=args.end_message_id,
             actor=args.actor,
+            source_channel_id=args.channel_id,
         )
         print(json.dumps({"created": created}, ensure_ascii=False, indent=2))
         return 0
@@ -103,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         "environment": app.config.app_env,
         "log_level": app.config.log_level,
         "targets": {
+            "telegram_channel_ids": list(app.config.telegram_channel_ids),
             "telegram_channel_id": app.config.telegram_channel_id,
             "vk_target_id": app.config.vk.target_id,
             "ok_target_id": app.config.ok.target_id,

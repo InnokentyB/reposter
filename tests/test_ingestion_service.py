@@ -85,6 +85,20 @@ class IngestionServiceTests(unittest.TestCase):
         self.assertEqual(result, "edit_ignored")
         self.assertFalse(repository.source_post_exists("tg-channel-1", 303))
 
+    def test_backfill_can_target_non_default_source_channel(self) -> None:
+        repository = SqliteRepository(":memory:")
+        repository.seed_default_destinations()
+        orchestrator = RepostOrchestrator(repository=repository, default_source_channel_id="tg-channel-2")
+
+        created = orchestrator.trigger_backfill(
+            start_message_id=401,
+            end_message_id=401,
+            actor="allowed-operator",
+        )
+
+        self.assertEqual(created, ["source-401"])
+        self.assertTrue(repository.source_post_exists("tg-channel-2", 401))
+
 
 if __name__ == "__main__":
     unittest.main()
