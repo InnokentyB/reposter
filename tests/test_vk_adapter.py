@@ -3,15 +3,17 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from repost_bot.config import PlatformCredentials
 from repost_bot.contracts import DeliveryStatus, Platform, RetryPolicy
-from repost_bot.errors import TransientPublishError
+from repost_bot.errors import PermanentPublishError, TransientPublishError
 from repost_bot.rendering import PlatformRenderer
+from repost_bot.runtime import build_application
 from repost_bot.service import DeliveryWorker, RepostOrchestrator
 from repost_bot.storage import SqliteRepository
 from repost_bot.vk_adapter import VkPublisher
-from tests.helpers import canonical_post, telegram_post
+from tests.helpers import telegram_post
 
 
 class VkPublisherTests(unittest.TestCase):
@@ -53,6 +55,70 @@ class VkPublisherTests(unittest.TestCase):
         )
 
         self.assertEqual(captured[0]["attachments"], ["photo:photo-1"])
+
+    def test_default_http_transport_publishes_text_post_via_vk_api(self) -> None:
+        captured_requests: list[tuple[str, dict]] = []
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return b'{"response":{"post_id":456}}'
+
+        def fake_urlopen(request, timeout=0):
+            body = request.data.decode("utf-8")
+            captured_requests.append((request.full_url, dict(item.split("=", 1) for item in body.split("&"))))
+            return _Response()
+
+        publisher = VkPublisher(
+            credentials=PlatformCredentials(target_id="12345", access_token="vk-secret"),
+        )
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            result = publisher.publish({"text": "Hello VK", "media": []})
+
+        self.assertEqual(result.remote_post_id, "456")
+        self.assertEqual(captured_requests[0][0], "https://api.vk.com/method/wall.post")
+        self.assertIn("message=Hello+VK", "&".join(f"{k}={v}" for k, v in captured_requests[0][1].items()))
+
+    def test_default_http_transport_rejects_media_until_vk_upload_flow_exists(self) -> None:
+        publisher = VkPublisher(
+            credentials=PlatformCredentials(target_id="12345", access_token="vk-secret"),
+        )
+
+        with self.assertRaises(PermanentPublishError):
+            publisher.publish({"text": "Photo post", "media": [{"type": "photo", "file_id": "tg-photo-1"}]})
+
+
+class RuntimePublisherWiringTests(unittest.TestCase):
+    def test_build_application_wires_real_publishers_for_enabled_platforms(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            app = build_application(
+                config=type("Config", (), {
+                    "app_env": "dev",
+                    "log_level": "INFO",
+                    "database_path": os.path.join(tempdir, "runtime.sqlite3"),
+                    "threads_enabled": True,
+                    "telegram_channel_ids": ("tg-channel-1",),
+                    "telegram_channel_id": "tg-channel-1",
+                    "telegram_bot_token": "telegram-secret",
+                    "vk": PlatformCredentials("12345", "vk-secret"),
+                    "ok": PlatformCredentials("ok-group-1", "ok-secret"),
+                    "threads": PlatformCredentials("threads-account-1", "threads-secret"),
+                    "allowed_operators": ("allowed-operator",),
+                    "telegram_poll_timeout_seconds": 30,
+                    "telegram_poll_interval_seconds": 2,
+                    "delivery_batch_limit": 100,
+                })()
+            )
+
+        self.assertIn(Platform.VK, app.delivery_worker.publishers)
+        self.assertIn(Platform.OK, app.delivery_worker.publishers)
+        self.assertIn(Platform.THREADS, app.delivery_worker.publishers)
 
 
 class VkWorkerIntegrationTests(unittest.TestCase):

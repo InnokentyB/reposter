@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from repost_bot.config import AppConfig, PlatformCredentials
 from repost_bot.contracts import DeliveryStatus, Platform, RetryPolicy
-from repost_bot.errors import TransientPublishError
+from repost_bot.errors import PermanentPublishError, TransientPublishError
 from repost_bot.rendering import PlatformRenderer
 from repost_bot.runtime import build_application
 from repost_bot.service import DeliveryWorker, RepostOrchestrator
@@ -33,6 +34,47 @@ class ThreadsPublisherTests(unittest.TestCase):
         self.assertEqual(result.remote_post_id, "threads-post-123")
         self.assertEqual(calls[0]["account_id"], "threads-account-1")
         self.assertEqual(calls[0]["text"], "Hello Threads")
+
+    def test_default_http_transport_publishes_text_post_via_threads_api(self) -> None:
+        requests: list[tuple[str, str]] = []
+
+        class _Response:
+            def __init__(self, payload: bytes) -> None:
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return self.payload
+
+        def fake_urlopen(request, timeout=0):
+            requests.append((request.full_url, request.data.decode("utf-8")))
+            if request.full_url.endswith("/threads"):
+                return _Response(b'{"id":"container-1"}')
+            return _Response(b'{"id":"threads-post-456"}')
+
+        publisher = ThreadsPublisher(
+            credentials=PlatformCredentials(target_id="threads-account-1", access_token="threads-secret"),
+        )
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            result = publisher.publish({"text": "Hello Threads", "media": []})
+
+        self.assertEqual(result.remote_post_id, "threads-post-456")
+        self.assertTrue(requests[0][0].endswith("/threads"))
+        self.assertTrue(requests[1][0].endswith("/threads_publish"))
+
+    def test_default_http_transport_rejects_media_until_threads_media_flow_exists(self) -> None:
+        publisher = ThreadsPublisher(
+            credentials=PlatformCredentials(target_id="threads-account-1", access_token="threads-secret"),
+        )
+
+        with self.assertRaises(PermanentPublishError):
+            publisher.publish({"text": "Photo Threads", "media": [{"type": "photo", "file_id": "tg-photo-1"}]})
 
 
 class ThreadsWorkerIntegrationTests(unittest.TestCase):

@@ -54,6 +54,14 @@ class OkPublisherTests(unittest.TestCase):
 
         self.assertEqual(captured[0]["media"], [{"type": "photo", "file_id": "photo-1"}])
 
+    def test_default_transport_explains_that_official_ok_flow_requires_widget(self) -> None:
+        publisher = OkPublisher(
+            credentials=PlatformCredentials(target_id="ok-group-1", access_token="ok-secret"),
+        )
+
+        with self.assertRaises(PermanentPublishError):
+            publisher.publish({"text": "Hello OK", "media": []})
+
 
 class OkWorkerIntegrationTests(unittest.TestCase):
     def test_worker_uses_ok_publisher_and_persists_remote_post(self) -> None:

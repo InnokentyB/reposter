@@ -3,10 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from repost_bot.config import AppConfig
+from repost_bot.contracts import Platform
+from repost_bot.ok_adapter import OkPublisher
 from repost_bot.service import DeliveryWorker, HealthService, RepostOrchestrator
 from repost_bot.storage import SqliteRepository
 from repost_bot.telegram_adapter import TelegramUpdateAdapter
 from repost_bot.telegram_poller import TelegramBotApiClient, TelegramPollingLoop
+from repost_bot.threads_adapter import ThreadsPublisher
+from repost_bot.vk_adapter import VkPublisher
 
 
 @dataclass(slots=True)
@@ -31,7 +35,13 @@ def build_application(config: AppConfig | None = None) -> Application:
         default_source_channel_id=resolved_config.telegram_channel_id,
         repository=repository,
     )
-    delivery_worker = DeliveryWorker(repository=repository)
+    publishers = {
+        Platform.VK: VkPublisher(credentials=resolved_config.vk),
+        Platform.OK: OkPublisher(credentials=resolved_config.ok),
+    }
+    if resolved_config.threads_enabled:
+        publishers[Platform.THREADS] = ThreadsPublisher(credentials=resolved_config.threads)
+    delivery_worker = DeliveryWorker(repository=repository, publishers=publishers)
     telegram_client = TelegramBotApiClient(
         bot_token=resolved_config.telegram_bot_token,
         poll_timeout_seconds=resolved_config.telegram_poll_timeout_seconds,

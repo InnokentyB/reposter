@@ -14,7 +14,11 @@ TransportFn = Callable[[dict], dict]
 @dataclass(slots=True)
 class OkPublisher:
     credentials: PlatformCredentials
-    transport: TransportFn
+    transport: TransportFn | None = None
+
+    def __post_init__(self) -> None:
+        if self.transport is None:
+            object.__setattr__(self, "transport", self._default_transport)
 
     def publish(self, payload: dict) -> PublishResult:
         request_payload = {
@@ -38,4 +42,10 @@ class OkPublisher:
         return PublishResult(
             remote_post_id=str(post_id),
             remote_permalink=response.get("permalink"),
+        )
+
+    def _default_transport(self, payload: dict) -> dict:
+        raise PermanentPublishError(
+            "Official Odnoklassniki group publishing requires WidgetMediatopicPost user flow; "
+            "server-side automatic posting is not configured in this baseline"
         )
