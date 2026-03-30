@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from repost_bot.contracts import AuditEvent, DeliveryStatus, DestinationStatus, Platform
+from repost_bot.contracts import AuditEvent, DeliveryJob, DeliveryStatus, DestinationStatus, Platform
 
 
 def _utcnow() -> str:
@@ -214,6 +214,105 @@ class SqliteRepository:
             ).fetchall()
         return rows
 
+    def list_due_delivery_jobs(
+        self,
+        limit: int = 100,
+        now: datetime | None = None,
+    ) -> list[DeliveryJob]:
+        reference_time = (now or datetime.utcnow()).isoformat(timespec="seconds")
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, source_post_id, destination_id, status, attempt_count,
+                       next_attempt_at, last_error_code, last_error_message
+                FROM delivery_jobs
+                WHERE status = ?
+                   OR (status = ? AND next_attempt_at IS NOT NULL AND next_attempt_at <= ?)
+                ORDER BY created_at, destination_id
+                LIMIT ?
+                """,
+                (
+                    DeliveryStatus.PENDING.value,
+                    DeliveryStatus.RETRY_SCHEDULED.value,
+                    reference_time,
+                    limit,
+                ),
+            ).fetchall()
+        return [self._row_to_delivery_job(row) for row in rows]
+
+    def get_delivery_job(self, job_id: str) -> DeliveryJob:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, source_post_id, destination_id, status, attempt_count,
+                       next_attempt_at, last_error_code, last_error_message
+                FROM delivery_jobs
+                WHERE id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        return self._row_to_delivery_job(row)
+
+    def update_delivery_job(self, job: DeliveryJob) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE delivery_jobs
+                SET status = ?, attempt_count = ?, next_attempt_at = ?,
+                    last_error_code = ?, last_error_message = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    job.status.value,
+                    job.attempt_count,
+                    job.next_attempt_at.isoformat(timespec="seconds") if job.next_attempt_at else None,
+                    job.last_error_code,
+                    job.last_error_message,
+                    _utcnow(),
+                    job.id,
+                ),
+            )
+
+    def mark_delivery_job_for_retry(
+        self,
+        job_id: str,
+        attempt_count: int,
+        next_attempt_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        job = self.get_delivery_job(job_id)
+        job.status = DeliveryStatus.RETRY_SCHEDULED
+        job.attempt_count = attempt_count
+        job.next_attempt_at = next_attempt_at
+        job.last_error_code = error_code
+        job.last_error_message = error_message
+        self.update_delivery_job(job)
+
+    def save_published_post(
+        self,
+        delivery_job_id: str,
+        remote_post_id: str,
+        remote_permalink: str | None = None,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO published_posts (
+                    delivery_job_id, remote_post_id, remote_permalink, published_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    delivery_job_id,
+                    remote_post_id,
+                    remote_permalink,
+                    _utcnow(),
+                ),
+            )
+
     def count_rows(self, table: str) -> int:
         with self.connect() as connection:
             row = connection.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()
@@ -235,3 +334,16 @@ class SqliteRepository:
                     event.created_at.isoformat(timespec="seconds") if event.created_at else _utcnow(),
                 ),
             )
+
+    def _row_to_delivery_job(self, row: sqlite3.Row) -> DeliveryJob:
+        next_attempt_at = row["next_attempt_at"]
+        return DeliveryJob(
+            id=row["id"],
+            source_post_id=row["source_post_id"],
+            destination_id=row["destination_id"],
+            status=DeliveryStatus(row["status"]),
+            attempt_count=row["attempt_count"],
+            next_attempt_at=datetime.fromisoformat(next_attempt_at) if next_attempt_at else None,
+            last_error_code=row["last_error_code"],
+            last_error_message=row["last_error_message"],
+        )

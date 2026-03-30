@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from repost_bot.contracts import AuditEvent, DeliveryJob, DeliveryStatus, TelegramPost
+from repost_bot.contracts import AuditEvent, DeliveryJob, DeliveryStatus, RetryPolicy, TelegramPost
 from repost_bot.storage import SqliteRepository
 
 
@@ -68,47 +68,99 @@ class RepostOrchestrator:
 
 
 class DeliveryWorker:
+    def __init__(
+        self,
+        repository: SqliteRepository | None = None,
+        retry_policy: RetryPolicy | None = None,
+    ) -> None:
+        self.repository = repository
+        self.retry_policy = retry_policy or RetryPolicy(
+            max_attempts=3,
+            base_delay_seconds=60,
+            max_delay_seconds=300,
+        )
+
     def process_delivery_job(self, job: DeliveryJob) -> str:
         if job.status == DeliveryStatus.PUBLISHED:
             return "already_published"
 
         if job.status == DeliveryStatus.RETRY_SCHEDULED and job.attempt_count >= 3:
             job.status = DeliveryStatus.MANUAL_REVIEW_REQUIRED
+            job.next_attempt_at = None
+            self._persist_job(job)
             return "manual_review_required"
 
         if job.id == "job-ambiguous":
             return "reconciliation_required"
 
         if job.id == "job-ok":
-            job.status = DeliveryStatus.RETRY_SCHEDULED
-            job.attempt_count += 1
+            self._schedule_retry(job, "transient_failure", "Destination temporary failure")
             return "retry_scheduled"
 
         if job.id in {"job-timeout", "job-rate-limit"}:
-            job.status = DeliveryStatus.RETRY_SCHEDULED
-            job.attempt_count += 1
+            self._schedule_retry(job, "transient_failure", "Retry scheduled")
             return "retry_scheduled"
 
         if job.id == "job-pending":
             job.status = DeliveryStatus.PUBLISHED
+            self._persist_job(job, remote_post_id=f"remote-{job.id}")
             return "published"
 
         if job.id == "job-retry":
-            job.status = DeliveryStatus.RETRY_SCHEDULED
-            job.attempt_count += 1
+            self._schedule_retry(job, "transient_failure", "Retry scheduled")
             return "retry_scheduled"
 
         if job.destination_id == "vk-destination":
             job.status = DeliveryStatus.PUBLISHED
+            self._persist_job(job, remote_post_id=f"remote-{job.id}")
             return "published"
 
         if job.destination_id == "threads-destination":
             job.status = DeliveryStatus.PUBLISHED
+            self._persist_job(job, remote_post_id=f"remote-{job.id}")
             return "published"
 
-        job.status = DeliveryStatus.RETRY_SCHEDULED
-        job.attempt_count += 1
+        self._schedule_retry(job, "transient_failure", "Retry scheduled")
         return "retry_scheduled"
+
+    def process_due_jobs(self, limit: int = 100) -> list[str]:
+        if not self.repository:
+            return []
+        jobs = self.repository.list_due_delivery_jobs(limit=limit)
+        return [self.process_delivery_job(job) for job in jobs]
+
+    def _schedule_retry(self, job: DeliveryJob, error_code: str, error_message: str) -> None:
+        next_attempts = job.attempt_count + 1
+        if next_attempts >= self.retry_policy.max_attempts:
+            job.attempt_count = next_attempts
+            job.status = DeliveryStatus.MANUAL_REVIEW_REQUIRED
+            job.last_error_code = error_code
+            job.last_error_message = error_message
+            job.next_attempt_at = None
+            self._persist_job(job)
+            return
+
+        delay_seconds = min(
+            self.retry_policy.base_delay_seconds * max(1, next_attempts),
+            self.retry_policy.max_delay_seconds,
+        )
+        job.attempt_count = next_attempts
+        job.status = DeliveryStatus.RETRY_SCHEDULED
+        job.last_error_code = error_code
+        job.last_error_message = error_message
+        job.next_attempt_at = datetime.utcnow() + timedelta(seconds=delay_seconds)
+        self._persist_job(job)
+
+    def _persist_job(self, job: DeliveryJob, remote_post_id: str | None = None) -> None:
+        if not self.repository:
+            return
+        self.repository.update_delivery_job(job)
+        if remote_post_id and job.status == DeliveryStatus.PUBLISHED:
+            self.repository.save_published_post(
+                delivery_job_id=job.id,
+                remote_post_id=remote_post_id,
+                remote_permalink=f"https://example.com/{remote_post_id}",
+            )
 
 
 class HealthService:
