@@ -107,6 +107,8 @@ class DeliveryWorker:
             return "reconciliation_required"
 
         if job.id == "job-ok":
+            if Platform.OK in self.publishers:
+                return self._publish_with_adapter(job, Platform.OK)
             self._schedule_retry(job, "transient_failure", "Destination temporary failure")
             return "retry_scheduled"
 
@@ -130,6 +132,9 @@ class DeliveryWorker:
             job.status = DeliveryStatus.PUBLISHED
             self._persist_job(job, remote_post_id=f"remote-{job.id}")
             return "published"
+
+        if job.destination_id == "ok-destination" and Platform.OK in self.publishers:
+            return self._publish_with_adapter(job, Platform.OK)
 
         if job.destination_id == "threads-destination":
             job.status = DeliveryStatus.PUBLISHED
