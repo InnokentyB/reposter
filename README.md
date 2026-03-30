@@ -1,10 +1,30 @@
 # Repost Bot
 
-Минимальный тестовый каркас для TDD-разработки бота репоста из Telegram в VK, Одноклассники и Threads.
+Python-проект для бота, который дублирует посты из Telegram в VK, Одноклассники и Threads.
 
 ## План работ
 
 - [Roadmap](./ROADMAP.md)
+
+## Текущий статус
+
+- `Issue 1` из roadmap уже реализован
+- есть runtime-структура приложения
+- есть конфиг `dev/prod`
+- секреты читаются из env или `.env`
+- маскировка секретов покрыта тестами
+
+## Быстрый старт
+
+1. Создай локальный `.env` на основе `.env.example`
+2. Заполни токены и target ids
+3. Запусти приложение:
+
+```bash
+python3 -m repost_bot
+```
+
+Команда выведет masked summary текущей конфигурации и проверит, что обязательные переменные окружения заданы.
 
 ## Запуск тестов
 
@@ -12,4 +32,16 @@
 python3 -m unittest discover -s tests -v
 ```
 
-Сейчас тесты описывают ожидаемое поведение и должны падать, пока production-логика не реализована.
+## Конфигурация
+
+- `APP_ENV`: `dev` или `prod`
+- `LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR`
+- `TELEGRAM_CHANNEL_ID`
+- `TELEGRAM_BOT_TOKEN`
+- `VK_COMMUNITY_ID`
+- `VK_ACCESS_TOKEN`
+- `OK_GROUP_ID`
+- `OK_ACCESS_TOKEN`
+- `THREADS_ACCOUNT_ID`
+- `THREADS_ACCESS_TOKEN`
+- `ALLOWED_OPERATORS`: список через запятую
