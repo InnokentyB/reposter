@@ -1,11 +1,32 @@
 from __future__ import annotations
 
+import argparse
 import json
 
+from repost_bot.admin_cli import render_status_report
+from repost_bot.config import AppConfig
 from repost_bot.runtime import build_application
+from repost_bot.storage import SqliteRepository
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="repost_bot")
+    subparsers = parser.add_subparsers(dest="command")
+
+    status_parser = subparsers.add_parser("status")
+    status_parser.add_argument("--database", dest="database_path")
+    status_parser.add_argument("--limit", type=int, default=20)
+
+    args = parser.parse_args(argv)
+
+    if args.command == "status":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+        else:
+            repository = SqliteRepository(AppConfig.from_env().database_path)
+        print(render_status_report(repository, limit=args.limit))
+        return 0
+
     app = build_application()
     summary = {
         "status": "ready",

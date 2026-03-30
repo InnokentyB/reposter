@@ -380,6 +380,52 @@ class SqliteRepository:
                 ),
             )
 
+    def get_delivery_status_counts(self) -> dict[str, int]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM delivery_jobs
+                GROUP BY status
+                ORDER BY status
+                """
+            ).fetchall()
+        return {row["status"]: int(row["count"]) for row in rows}
+
+    def list_stuck_delivery_jobs(self, limit: int = 20) -> list[sqlite3.Row]:
+        reference_time = datetime.utcnow().isoformat(timespec="seconds")
+        with self.connect() as connection:
+            return connection.execute(
+                """
+                SELECT id, source_post_id, destination_id, status, attempt_count,
+                       next_attempt_at, last_error_code, last_error_message
+                FROM delivery_jobs
+                WHERE status = ?
+                   OR (status = ? AND next_attempt_at IS NOT NULL AND next_attempt_at <= ?)
+                ORDER BY updated_at DESC, id
+                LIMIT ?
+                """,
+                (
+                    DeliveryStatus.FAILED.value,
+                    DeliveryStatus.RETRY_SCHEDULED.value,
+                    reference_time,
+                    limit,
+                ),
+            ).fetchall()
+
+    def list_recent_delivery_errors(self, limit: int = 20) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            return connection.execute(
+                """
+                SELECT id, source_post_id, destination_id, status, last_error_code, last_error_message
+                FROM delivery_jobs
+                WHERE last_error_code IS NOT NULL OR last_error_message IS NOT NULL
+                ORDER BY updated_at DESC, id
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
     def _row_to_delivery_job(self, row: sqlite3.Row) -> DeliveryJob:
         next_attempt_at = row["next_attempt_at"]
         return DeliveryJob(
