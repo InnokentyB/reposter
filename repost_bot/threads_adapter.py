@@ -12,12 +12,14 @@ from repost_bot.errors import PermanentPublishError, TransientPublishError
 
 
 TransportFn = Callable[[dict], dict]
+MediaResolverFn = Callable[[str], str]
 
 
 @dataclass(slots=True)
 class ThreadsPublisher:
     credentials: PlatformCredentials
     transport: TransportFn | None = None
+    media_resolver: MediaResolverFn | None = None
 
     def __post_init__(self) -> None:
         if self.transport is None:
@@ -48,22 +50,39 @@ class ThreadsPublisher:
         )
 
     def _default_transport(self, payload: dict) -> dict:
-        if payload.get("media"):
-            raise PermanentPublishError(
-                "Threads media publishing requires media URL/upload flow; Telegram-origin media is not mapped yet"
+        request_fields = {
+            "access_token": payload["access_token"],
+        }
+        media = payload.get("media") or []
+        if media:
+            if len(media) != 1 or media[0].get("type") != "photo":
+                raise PermanentPublishError("Threads default media baseline supports only one photo")
+            if self.media_resolver is None:
+                raise PermanentPublishError(
+                    "Threads media publishing requires public media_resolver configured with MEDIA_BASE_URL"
+                )
+            file_id = media[0].get("file_id")
+            if not file_id:
+                raise PermanentPublishError("Threads photo publish requires Telegram file_id")
+            request_fields.update(
+                {
+                    "media_type": "IMAGE",
+                    "image_url": self.media_resolver(file_id),
+                    "text": payload.get("text", ""),
+                }
             )
-
-        account_id = payload["account_id"]
-        access_token = payload["access_token"]
-        create_request = urllib.request.Request(
-            url=f"https://graph.threads.net/v1.0/{account_id}/threads",
-            data=urllib.parse.urlencode(
+        else:
+            request_fields.update(
                 {
                     "media_type": "TEXT",
                     "text": payload.get("text", ""),
-                    "access_token": access_token,
                 }
-            ).encode("utf-8"),
+            )
+
+        account_id = payload["account_id"]
+        create_request = urllib.request.Request(
+            url=f"https://graph.threads.net/v1.0/{account_id}/threads",
+            data=urllib.parse.urlencode(request_fields).encode("utf-8"),
             method="POST",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
@@ -78,7 +97,7 @@ class ThreadsPublisher:
             data=urllib.parse.urlencode(
                 {
                     "creation_id": creation_id,
-                    "access_token": access_token,
+                    "access_token": payload["access_token"],
                 }
             ).encode("utf-8"),
             method="POST",

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from repost_bot.config import AppConfig
 from repost_bot.contracts import Platform
+from repost_bot.media_store import LocalMediaStore
 from repost_bot.ok_adapter import OkPublisher
 from repost_bot.service import DeliveryWorker, HealthService, RepostOrchestrator
 from repost_bot.storage import SqliteRepository
@@ -28,10 +29,20 @@ class Application:
 
 def build_application(config: AppConfig | None = None) -> Application:
     resolved_config = config or AppConfig.from_env()
+    media_base_url = getattr(resolved_config, "media_base_url", None)
+    media_storage_path = getattr(resolved_config, "media_storage_path", "var/media")
     repository = SqliteRepository(resolved_config.database_path)
     repository.seed_default_destinations(threads_enabled=resolved_config.threads_enabled)
     telegram_adapter = TelegramUpdateAdapter(expected_channel_ids=resolved_config.telegram_channel_ids)
     telegram_media_client = TelegramMediaClient(bot_token=resolved_config.telegram_bot_token)
+    media_store = (
+        LocalMediaStore(
+            storage_path=media_storage_path,
+            public_base_url=media_base_url,
+        )
+        if media_base_url
+        else None
+    )
     orchestrator = RepostOrchestrator(
         allowed_operators=set(resolved_config.allowed_operators),
         default_source_channel_id=resolved_config.telegram_channel_id,
@@ -45,7 +56,14 @@ def build_application(config: AppConfig | None = None) -> Application:
         Platform.OK: OkPublisher(credentials=resolved_config.ok),
     }
     if resolved_config.threads_enabled:
-        publishers[Platform.THREADS] = ThreadsPublisher(credentials=resolved_config.threads)
+        publishers[Platform.THREADS] = ThreadsPublisher(
+            credentials=resolved_config.threads,
+            media_resolver=(
+                lambda file_id: media_store.store_file(telegram_media_client.download_file(file_id))
+                if media_store
+                else None
+            ),
+        )
     delivery_worker = DeliveryWorker(repository=repository, publishers=publishers)
     telegram_client = TelegramBotApiClient(
         bot_token=resolved_config.telegram_bot_token,

@@ -71,6 +71,8 @@ class AppConfig:
     telegram_poll_timeout_seconds: int = 30
     telegram_poll_interval_seconds: int = 2
     delivery_batch_limit: int = 100
+    media_storage_path: str = "var/media"
+    media_base_url: str | None = None
 
     @classmethod
     def from_env(cls, env_file: str = ".env") -> "AppConfig":
@@ -124,6 +126,8 @@ class AppConfig:
                 _load_value("TELEGRAM_POLL_INTERVAL_SECONDS", file_values, "2")
             ),
             delivery_batch_limit=int(_load_value("DELIVERY_BATCH_LIMIT", file_values, "100")),
+            media_storage_path=_load_value("MEDIA_STORAGE_PATH", file_values, "var/media"),
+            media_base_url=_load_value("MEDIA_BASE_URL", file_values),
         )
 
     @property
@@ -146,4 +150,6 @@ class AppConfig:
             "telegram_poll_timeout_seconds": self.telegram_poll_timeout_seconds,
             "telegram_poll_interval_seconds": self.telegram_poll_interval_seconds,
             "delivery_batch_limit": self.delivery_batch_limit,
+            "media_storage_path": self.media_storage_path,
+            "media_base_url": self.media_base_url,
         }
