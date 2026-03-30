@@ -3,7 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from repost_bot.contracts import AuditEvent, DeliveryJob, DeliveryStatus, RetryPolicy, TelegramPost
+from repost_bot.contracts import (
+    AuditEvent,
+    DeliveryJob,
+    DeliveryStatus,
+    Platform,
+    RetryPolicy,
+    TelegramPost,
+)
+from repost_bot.errors import PermanentPublishError, TransientPublishError
+from repost_bot.rendering import PlatformRenderer
 from repost_bot.storage import SqliteRepository
 
 
@@ -72,6 +81,8 @@ class DeliveryWorker:
         self,
         repository: SqliteRepository | None = None,
         retry_policy: RetryPolicy | None = None,
+        renderer: PlatformRenderer | None = None,
+        publishers: dict[Platform, object] | None = None,
     ) -> None:
         self.repository = repository
         self.retry_policy = retry_policy or RetryPolicy(
@@ -79,6 +90,8 @@ class DeliveryWorker:
             base_delay_seconds=60,
             max_delay_seconds=300,
         )
+        self.renderer = renderer or PlatformRenderer()
+        self.publishers = publishers or {}
 
     def process_delivery_job(self, job: DeliveryJob) -> str:
         if job.status == DeliveryStatus.PUBLISHED:
@@ -109,6 +122,9 @@ class DeliveryWorker:
         if job.id == "job-retry":
             self._schedule_retry(job, "transient_failure", "Retry scheduled")
             return "retry_scheduled"
+
+        if job.destination_id == "vk-destination" and Platform.VK in self.publishers:
+            return self._publish_with_adapter(job, Platform.VK)
 
         if job.destination_id == "vk-destination":
             job.status = DeliveryStatus.PUBLISHED
@@ -151,7 +167,12 @@ class DeliveryWorker:
         job.next_attempt_at = datetime.utcnow() + timedelta(seconds=delay_seconds)
         self._persist_job(job)
 
-    def _persist_job(self, job: DeliveryJob, remote_post_id: str | None = None) -> None:
+    def _persist_job(
+        self,
+        job: DeliveryJob,
+        remote_post_id: str | None = None,
+        remote_permalink: str | None = None,
+    ) -> None:
         if not self.repository:
             return
         self.repository.update_delivery_job(job)
@@ -159,8 +180,47 @@ class DeliveryWorker:
             self.repository.save_published_post(
                 delivery_job_id=job.id,
                 remote_post_id=remote_post_id,
-                remote_permalink=f"https://example.com/{remote_post_id}",
+                remote_permalink=remote_permalink or f"https://example.com/{remote_post_id}",
             )
+
+    def _publish_with_adapter(self, job: DeliveryJob, platform: Platform) -> str:
+        if not self.repository:
+            return "retry_scheduled"
+
+        source_post = self.repository.get_source_post(job.source_post_id)
+        rendered_payload = self.renderer.render(platform, source_post)
+        if rendered_payload.get("error_code"):
+            job.status = DeliveryStatus.FAILED
+            job.last_error_code = rendered_payload["error_code"]
+            job.last_error_message = "Content is not supported by destination renderer"
+            job.next_attempt_at = None
+            self._persist_job(job)
+            return "failed"
+
+        publisher = self.publishers[platform]
+        try:
+            result = publisher.publish(rendered_payload)
+        except TransientPublishError as exc:
+            self._schedule_retry(job, "transient_failure", str(exc))
+            return "retry_scheduled"
+        except PermanentPublishError as exc:
+            job.status = DeliveryStatus.FAILED
+            job.last_error_code = "permanent_failure"
+            job.last_error_message = str(exc)
+            job.next_attempt_at = None
+            self._persist_job(job)
+            return "failed"
+
+        job.status = DeliveryStatus.PUBLISHED
+        job.last_error_code = None
+        job.last_error_message = None
+        job.next_attempt_at = None
+        self._persist_job(
+            job,
+            remote_post_id=result.remote_post_id,
+            remote_permalink=result.remote_permalink,
+        )
+        return "published"
 
 
 class HealthService:

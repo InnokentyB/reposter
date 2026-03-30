@@ -7,7 +7,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from repost_bot.contracts import AuditEvent, DeliveryJob, DeliveryStatus, DestinationStatus, Platform
+from repost_bot.contracts import (
+    AuditEvent,
+    CanonicalPost,
+    DeliveryJob,
+    DeliveryStatus,
+    DestinationStatus,
+    Platform,
+)
 
 
 def _utcnow() -> str:
@@ -178,6 +185,30 @@ class SqliteRepository:
             ).fetchall()
         return [row["id"] for row in rows]
 
+    def get_source_post(self, source_post_id: str) -> CanonicalPost:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, source_platform, source_channel_id, source_message_id,
+                       raw_payload, normalized_payload, content_hash, published_at
+                FROM source_posts
+                WHERE id = ?
+                """,
+                (source_post_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(source_post_id)
+        published_at = row["published_at"]
+        return CanonicalPost(
+            source_platform=Platform(row["source_platform"]),
+            source_channel_id=row["source_channel_id"],
+            source_message_id=row["source_message_id"],
+            raw_payload=json.loads(row["raw_payload"]),
+            normalized_payload=json.loads(row["normalized_payload"]),
+            content_hash=row["content_hash"],
+            published_at=datetime.fromisoformat(published_at) if published_at else None,
+        )
+
     def create_delivery_job(self, source_post_id: str, destination_id: str) -> str:
         job_id = f"{source_post_id}:{destination_id}"
         now = _utcnow()
@@ -312,6 +343,20 @@ class SqliteRepository:
                     _utcnow(),
                 ),
             )
+
+    def get_published_post(self, delivery_job_id: str) -> sqlite3.Row:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT delivery_job_id, remote_post_id, remote_permalink, published_at
+                FROM published_posts
+                WHERE delivery_job_id = ?
+                """,
+                (delivery_job_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(delivery_job_id)
+        return row
 
     def count_rows(self, table: str) -> int:
         with self.connect() as connection:
