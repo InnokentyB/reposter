@@ -30,6 +30,12 @@ def main(argv: list[str] | None = None) -> int:
     retry_parser.add_argument("--job-id", required=True)
     retry_parser.add_argument("--actor", required=True)
 
+    backfill_parser = subparsers.add_parser("backfill")
+    backfill_parser.add_argument("--database", dest="database_path")
+    backfill_parser.add_argument("--start-message-id", type=int, required=True)
+    backfill_parser.add_argument("--end-message-id", type=int, required=True)
+    backfill_parser.add_argument("--actor", required=True)
+
     args = parser.parse_args(argv)
 
     if args.command == "status":
@@ -69,6 +75,26 @@ def main(argv: list[str] | None = None) -> int:
         )
         result = orchestrator.retry_delivery_job(args.job_id, actor=args.actor)
         print(result)
+        return 0
+
+    if args.command == "backfill":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+            allowed_operators = {"allowed-operator"}
+        else:
+            config = AppConfig.from_env()
+            repository = SqliteRepository(config.database_path)
+            allowed_operators = set(config.allowed_operators)
+        orchestrator = RepostOrchestrator(
+            repository=repository,
+            allowed_operators=allowed_operators,
+        )
+        created = orchestrator.trigger_backfill(
+            start_message_id=args.start_message_id,
+            end_message_id=args.end_message_id,
+            actor=args.actor,
+        )
+        print(json.dumps({"created": created}, ensure_ascii=False, indent=2))
         return 0
 
     app = build_application()

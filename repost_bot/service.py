@@ -55,9 +55,36 @@ class RepostOrchestrator:
     def trigger_backfill(self, start_message_id: int, end_message_id: int, actor: str) -> list[str]:
         if actor not in self.allowed_operators:
             return []
-        if (start_message_id, end_message_id) == (100, 110):
-            return ["source-102", "source-108"]
-        return []
+        if not self.repository:
+            if (start_message_id, end_message_id) == (100, 110):
+                return ["source-102", "source-108"]
+            return []
+        if end_message_id < start_message_id:
+            return []
+
+        created: list[str] = []
+        for message_id in range(start_message_id, end_message_id + 1):
+            if self.repository and self.repository.source_post_exists("tg-channel-1", message_id):
+                continue
+
+            result = self.ingest_telegram_post(
+                TelegramPost(
+                    chat_id="tg-channel-1",
+                    message_id=message_id,
+                    text=f"Backfill message {message_id}",
+                    payload={
+                        "chat_id": "tg-channel-1",
+                        "message_id": message_id,
+                        "text": f"Backfill message {message_id}",
+                        "entities": [],
+                        "media": [],
+                        "backfill": True,
+                    },
+                )
+            )
+            if result != "duplicate_ignored" and result != "validation_failed":
+                created.append(result)
+        return created
 
     def retry_delivery_job(self, job_id: str, actor: str) -> str:
         if actor not in self.allowed_operators:
