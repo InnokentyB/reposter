@@ -54,3 +54,18 @@ def render_dead_letter_report(repository: SqliteRepository, limit: int = 20) -> 
             f"{row['last_error_code'] or '-'} | {row['last_error_message'] or '-'}"
         )
     return "\n".join(lines)
+
+
+def render_audit_report(repository: SqliteRepository, limit: int = 20) -> str:
+    rows = repository.list_recent_audit_events(limit=limit)
+    lines = ["Audit Log"]
+    if not rows:
+        lines.append("No audit events found.")
+        return "\n".join(lines)
+
+    for row in rows:
+        lines.append(
+            f"{row['created_at']} | actor={row['actor']} | action={row['action']} | "
+            f"{row['target_type']}={row['target_id']} | result={row['result']}"
+        )
+    return "\n".join(lines)

@@ -20,6 +20,11 @@ class AdminAndOperationsTests(unittest.TestCase):
 
         self.assertEqual(result, "forbidden")
 
+    def test_unauthorized_operator_cannot_disable_destination(self) -> None:
+        result = self.orchestrator.disable_destination("vk-destination", actor="intruder")
+
+        self.assertEqual(result, "forbidden")
+
     def test_health_endpoint_reports_degraded_when_queue_or_database_is_unhealthy(self) -> None:
         status = self.health_service.status()
 
@@ -52,4 +57,3 @@ class AdminAndOperationsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from repost_bot.admin_cli import render_dead_letter_report, render_status_report
+from repost_bot.admin_cli import render_audit_report, render_dead_letter_report, render_status_report
 from repost_bot.config import AppConfig
 from repost_bot.runtime import build_application
 from repost_bot.service import HealthService, RepostOrchestrator
@@ -25,10 +25,30 @@ def main(argv: list[str] | None = None) -> int:
     dead_letter_parser.add_argument("--database", dest="database_path")
     dead_letter_parser.add_argument("--limit", type=int, default=20)
 
+    audit_parser = subparsers.add_parser("audit-log")
+    audit_parser.add_argument("--database", dest="database_path")
+    audit_parser.add_argument("--limit", type=int, default=20)
+
     retry_parser = subparsers.add_parser("retry-job")
     retry_parser.add_argument("--database", dest="database_path")
     retry_parser.add_argument("--job-id", required=True)
     retry_parser.add_argument("--actor", required=True)
+
+    disable_parser = subparsers.add_parser("disable-destination")
+    disable_parser.add_argument("--database", dest="database_path")
+    disable_parser.add_argument("--destination-id", required=True)
+    disable_parser.add_argument("--actor", required=True)
+
+    remap_parser = subparsers.add_parser("remap-target")
+    remap_parser.add_argument("--database", dest="database_path")
+    remap_parser.add_argument("--destination-id", required=True)
+    remap_parser.add_argument("--target-id", required=True)
+    remap_parser.add_argument("--actor", required=True)
+
+    rotate_parser = subparsers.add_parser("rotate-token")
+    rotate_parser.add_argument("--database", dest="database_path")
+    rotate_parser.add_argument("--config-ref", required=True)
+    rotate_parser.add_argument("--actor", required=True)
 
     backfill_parser = subparsers.add_parser("backfill")
     backfill_parser.add_argument("--database", dest="database_path")
@@ -63,6 +83,14 @@ def main(argv: list[str] | None = None) -> int:
         print(render_dead_letter_report(repository, limit=args.limit))
         return 0
 
+    if args.command == "audit-log":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+        else:
+            repository = SqliteRepository(AppConfig.from_env().database_path)
+        print(render_audit_report(repository, limit=args.limit))
+        return 0
+
     if args.command == "retry-job":
         if args.database_path:
             repository = SqliteRepository(args.database_path)
@@ -76,6 +104,52 @@ def main(argv: list[str] | None = None) -> int:
         )
         result = orchestrator.retry_delivery_job(args.job_id, actor=args.actor)
         print(result)
+        return 0
+
+    if args.command == "disable-destination":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+            repository.seed_default_destinations(threads_enabled=False)
+            allowed_operators = {"allowed-operator"}
+        else:
+            config = AppConfig.from_env()
+            repository = SqliteRepository(config.database_path)
+            repository.seed_default_destinations(threads_enabled=config.threads_enabled)
+            allowed_operators = set(config.allowed_operators)
+        orchestrator = RepostOrchestrator(repository=repository, allowed_operators=allowed_operators)
+        print(orchestrator.disable_destination(args.destination_id, actor=args.actor))
+        return 0
+
+    if args.command == "remap-target":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+            repository.seed_default_destinations(threads_enabled=False)
+            allowed_operators = {"allowed-operator"}
+        else:
+            config = AppConfig.from_env()
+            repository = SqliteRepository(config.database_path)
+            repository.seed_default_destinations(threads_enabled=config.threads_enabled)
+            allowed_operators = set(config.allowed_operators)
+        orchestrator = RepostOrchestrator(repository=repository, allowed_operators=allowed_operators)
+        print(
+            orchestrator.remap_destination_target(
+                args.destination_id,
+                target_id=args.target_id,
+                actor=args.actor,
+            )
+        )
+        return 0
+
+    if args.command == "rotate-token":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+            allowed_operators = {"allowed-operator"}
+        else:
+            config = AppConfig.from_env()
+            repository = SqliteRepository(config.database_path)
+            allowed_operators = set(config.allowed_operators)
+        orchestrator = RepostOrchestrator(repository=repository, allowed_operators=allowed_operators)
+        print(orchestrator.record_token_rotation(args.config_ref, actor=args.actor))
         return 0
 
     if args.command == "backfill":

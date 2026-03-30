@@ -7,6 +7,7 @@ from repost_bot.contracts import (
     AuditEvent,
     DeliveryJob,
     DeliveryStatus,
+    DestinationStatus,
     Platform,
     RetryPolicy,
     TelegramPost,
@@ -128,6 +129,66 @@ class RepostOrchestrator:
                 )
             )
         return "retry_started"
+
+    def disable_destination(self, destination_id: str, actor: str) -> str:
+        if actor not in self.allowed_operators:
+            return "forbidden"
+        if not self.repository:
+            return "disabled"
+        try:
+            self.repository.get_destination(destination_id)
+        except KeyError:
+            return "not_found"
+        self.repository.update_destination_status(destination_id, DestinationStatus.DISABLED)
+        self.repository.save_audit_event(
+            AuditEvent(
+                actor=actor,
+                action="disable_destination",
+                target_type="destination",
+                target_id=destination_id,
+                result="disabled",
+                created_at=datetime.utcnow(),
+            )
+        )
+        return "disabled"
+
+    def remap_destination_target(self, destination_id: str, target_id: str, actor: str) -> str:
+        if actor not in self.allowed_operators:
+            return "forbidden"
+        if not self.repository:
+            return "remapped"
+        try:
+            self.repository.get_destination(destination_id)
+        except KeyError:
+            return "not_found"
+        self.repository.update_destination_target(destination_id, target_id)
+        self.repository.save_audit_event(
+            AuditEvent(
+                actor=actor,
+                action="remap_target",
+                target_type="destination",
+                target_id=destination_id,
+                result="remapped",
+                created_at=datetime.utcnow(),
+            )
+        )
+        return "remapped"
+
+    def record_token_rotation(self, config_ref: str, actor: str, token_hint: str | None = None) -> str:
+        if actor not in self.allowed_operators:
+            return "forbidden"
+        if self.repository:
+            self.repository.save_audit_event(
+                AuditEvent(
+                    actor=actor,
+                    action="rotate_token",
+                    target_type="config_ref",
+                    target_id=config_ref,
+                    result="rotation_recorded",
+                    created_at=datetime.utcnow(),
+                )
+            )
+        return "rotation_recorded"
 
 
 class DeliveryWorker:

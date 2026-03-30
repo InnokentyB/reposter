@@ -199,6 +199,42 @@ class SqliteRepository:
             raise KeyError(destination_id)
         return str(row["status"])
 
+    def get_destination(self, destination_id: str) -> sqlite3.Row:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, platform, target_id, status, config_ref
+                FROM destinations
+                WHERE id = ?
+                """,
+                (destination_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(destination_id)
+        return row
+
+    def update_destination_status(self, destination_id: str, status: DestinationStatus) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE destinations
+                SET status = ?
+                WHERE id = ?
+                """,
+                (status.value, destination_id),
+            )
+
+    def update_destination_target(self, destination_id: str, target_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE destinations
+                SET target_id = ?
+                WHERE id = ?
+                """,
+                (target_id, destination_id),
+            )
+
     def get_source_post(self, source_post_id: str) -> CanonicalPost:
         with self.connect() as connection:
             row = connection.execute(
@@ -393,6 +429,18 @@ class SqliteRepository:
                     event.created_at.isoformat(timespec="seconds") if event.created_at else _utcnow(),
                 ),
             )
+
+    def list_recent_audit_events(self, limit: int = 20) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            return connection.execute(
+                """
+                SELECT actor, action, target_type, target_id, result, created_at
+                FROM audit_events
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
 
     def get_delivery_status_counts(self) -> dict[str, int]:
         with self.connect() as connection:
