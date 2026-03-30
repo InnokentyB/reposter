@@ -39,3 +39,18 @@ def render_status_report(repository: SqliteRepository, limit: int = 20) -> str:
             )
 
     return "\n".join(lines)
+
+
+def render_dead_letter_report(repository: SqliteRepository, limit: int = 20) -> str:
+    rows = repository.list_manual_review_jobs(limit=limit)
+    lines = ["Manual Review Queue"]
+    if not rows:
+        lines.append("No manual review jobs found.")
+        return "\n".join(lines)
+
+    for row in rows:
+        lines.append(
+            f"{row['id']} | attempts={row['attempt_count']} | "
+            f"{row['last_error_code'] or '-'} | {row['last_error_message'] or '-'}"
+        )
+    return "\n".join(lines)

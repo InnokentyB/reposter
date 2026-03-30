@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 
-from repost_bot.admin_cli import render_status_report
+from repost_bot.admin_cli import render_dead_letter_report, render_status_report
 from repost_bot.config import AppConfig
 from repost_bot.runtime import build_application
-from repost_bot.service import HealthService
+from repost_bot.service import HealthService, RepostOrchestrator
 from repost_bot.storage import SqliteRepository
 
 
@@ -20,6 +20,15 @@ def main(argv: list[str] | None = None) -> int:
 
     health_parser = subparsers.add_parser("health")
     health_parser.add_argument("--database", dest="database_path")
+
+    dead_letter_parser = subparsers.add_parser("dead-letter")
+    dead_letter_parser.add_argument("--database", dest="database_path")
+    dead_letter_parser.add_argument("--limit", type=int, default=20)
+
+    retry_parser = subparsers.add_parser("retry-job")
+    retry_parser.add_argument("--database", dest="database_path")
+    retry_parser.add_argument("--job-id", required=True)
+    retry_parser.add_argument("--actor", required=True)
 
     args = parser.parse_args(argv)
 
@@ -37,6 +46,29 @@ def main(argv: list[str] | None = None) -> int:
         else:
             repository = SqliteRepository(AppConfig.from_env().database_path)
         print(json.dumps(HealthService(repository=repository).status(), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "dead-letter":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+        else:
+            repository = SqliteRepository(AppConfig.from_env().database_path)
+        print(render_dead_letter_report(repository, limit=args.limit))
+        return 0
+
+    if args.command == "retry-job":
+        if args.database_path:
+            repository = SqliteRepository(args.database_path)
+        else:
+            repository = SqliteRepository(AppConfig.from_env().database_path)
+        orchestrator = RepostOrchestrator(
+            repository=repository,
+            allowed_operators=set(AppConfig.from_env().allowed_operators)
+            if not args.database_path
+            else {"allowed-operator"},
+        )
+        result = orchestrator.retry_delivery_job(args.job_id, actor=args.actor)
+        print(result)
         return 0
 
     app = build_application()

@@ -63,6 +63,23 @@ class RepostOrchestrator:
         if actor not in self.allowed_operators:
             return "forbidden"
         if self.repository:
+            try:
+                job = self.repository.get_delivery_job(job_id)
+            except KeyError:
+                self.repository.save_audit_event(
+                    AuditEvent(
+                        actor=actor,
+                        action="retry_delivery_job",
+                        target_type="delivery_job",
+                        target_id=job_id,
+                        result="retry_started",
+                        created_at=datetime.utcnow(),
+                    )
+                )
+                return "retry_started"
+            if job.status != DeliveryStatus.MANUAL_REVIEW_REQUIRED:
+                return "invalid_state"
+            self.repository.reset_delivery_job_for_manual_retry(job_id)
             self.repository.save_audit_event(
                 AuditEvent(
                     actor=actor,

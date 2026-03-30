@@ -465,6 +465,33 @@ class SqliteRepository:
                 (limit,),
             ).fetchall()
 
+    def list_manual_review_jobs(self, limit: int = 20) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            return connection.execute(
+                """
+                SELECT id, source_post_id, destination_id, status, attempt_count,
+                       last_error_code, last_error_message, updated_at
+                FROM delivery_jobs
+                WHERE status = ?
+                ORDER BY updated_at DESC, id
+                LIMIT ?
+                """,
+                (
+                    DeliveryStatus.MANUAL_REVIEW_REQUIRED.value,
+                    limit,
+                ),
+            ).fetchall()
+
+    def reset_delivery_job_for_manual_retry(self, job_id: str) -> DeliveryJob:
+        job = self.get_delivery_job(job_id)
+        job.status = DeliveryStatus.PENDING
+        job.attempt_count = 0
+        job.next_attempt_at = None
+        job.last_error_code = None
+        job.last_error_message = None
+        self.update_delivery_job(job)
+        return job
+
     def _row_to_delivery_job(self, row: sqlite3.Row) -> DeliveryJob:
         next_attempt_at = row["next_attempt_at"]
         return DeliveryJob(
