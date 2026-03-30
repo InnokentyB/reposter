@@ -68,6 +68,9 @@ class AppConfig:
     ok: PlatformCredentials
     threads: PlatformCredentials
     allowed_operators: tuple[str, ...]
+    telegram_poll_timeout_seconds: int = 30
+    telegram_poll_interval_seconds: int = 2
+    delivery_batch_limit: int = 100
 
     @classmethod
     def from_env(cls, env_file: str = ".env") -> "AppConfig":
@@ -114,6 +117,13 @@ class AppConfig:
                 access_token=_require("THREADS_ACCESS_TOKEN", file_values),
             ),
             allowed_operators=allowed_operators,
+            telegram_poll_timeout_seconds=int(
+                _load_value("TELEGRAM_POLL_TIMEOUT_SECONDS", file_values, "30")
+            ),
+            telegram_poll_interval_seconds=int(
+                _load_value("TELEGRAM_POLL_INTERVAL_SECONDS", file_values, "2")
+            ),
+            delivery_batch_limit=int(_load_value("DELIVERY_BATCH_LIMIT", file_values, "100")),
         )
 
     @property
@@ -133,4 +143,7 @@ class AppConfig:
             "ok": self.ok.masked(),
             "threads": self.threads.masked(),
             "allowed_operators": list(self.allowed_operators),
+            "telegram_poll_timeout_seconds": self.telegram_poll_timeout_seconds,
+            "telegram_poll_interval_seconds": self.telegram_poll_interval_seconds,
+            "delivery_batch_limit": self.delivery_batch_limit,
         }

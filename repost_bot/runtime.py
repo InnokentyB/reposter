@@ -6,6 +6,7 @@ from repost_bot.config import AppConfig
 from repost_bot.service import DeliveryWorker, HealthService, RepostOrchestrator
 from repost_bot.storage import SqliteRepository
 from repost_bot.telegram_adapter import TelegramUpdateAdapter
+from repost_bot.telegram_poller import TelegramBotApiClient, TelegramPollingLoop
 
 
 @dataclass(slots=True)
@@ -13,6 +14,8 @@ class Application:
     config: AppConfig
     repository: SqliteRepository
     telegram_adapter: TelegramUpdateAdapter
+    telegram_client: TelegramBotApiClient
+    telegram_poller: TelegramPollingLoop
     orchestrator: RepostOrchestrator
     delivery_worker: DeliveryWorker
     health_service: HealthService
@@ -28,11 +31,26 @@ def build_application(config: AppConfig | None = None) -> Application:
         default_source_channel_id=resolved_config.telegram_channel_id,
         repository=repository,
     )
+    delivery_worker = DeliveryWorker(repository=repository)
+    telegram_client = TelegramBotApiClient(
+        bot_token=resolved_config.telegram_bot_token,
+        poll_timeout_seconds=resolved_config.telegram_poll_timeout_seconds,
+    )
+    telegram_poller = TelegramPollingLoop(
+        client=telegram_client,
+        adapter=telegram_adapter,
+        orchestrator=orchestrator,
+        delivery_worker=delivery_worker,
+        delivery_batch_limit=resolved_config.delivery_batch_limit,
+        poll_interval_seconds=resolved_config.telegram_poll_interval_seconds,
+    )
     return Application(
         config=resolved_config,
         repository=repository,
         telegram_adapter=telegram_adapter,
+        telegram_client=telegram_client,
+        telegram_poller=telegram_poller,
         orchestrator=orchestrator,
-        delivery_worker=DeliveryWorker(),
+        delivery_worker=delivery_worker,
         health_service=HealthService(repository=repository),
     )

@@ -8,6 +8,7 @@ from repost_bot.config import AppConfig
 from repost_bot.runtime import build_application
 from repost_bot.service import HealthService, RepostOrchestrator
 from repost_bot.storage import SqliteRepository
+from repost_bot.telegram_poller import TelegramPollingLoop
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,6 +21,9 @@ def main(argv: list[str] | None = None) -> int:
 
     health_parser = subparsers.add_parser("health")
     health_parser.add_argument("--database", dest="database_path")
+
+    poller_parser = subparsers.add_parser("run-poller")
+    poller_parser.add_argument("--once", action="store_true")
 
     dead_letter_parser = subparsers.add_parser("dead-letter")
     dead_letter_parser.add_argument("--database", dest="database_path")
@@ -73,6 +77,25 @@ def main(argv: list[str] | None = None) -> int:
         else:
             repository = SqliteRepository(AppConfig.from_env().database_path)
         print(json.dumps(HealthService(repository=repository).status(), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "run-poller":
+        app = build_application(AppConfig.from_env())
+        poller = TelegramPollingLoop(
+            client=app.telegram_client,
+            adapter=app.telegram_adapter,
+            orchestrator=app.orchestrator,
+            delivery_worker=app.delivery_worker,
+            delivery_batch_limit=app.config.delivery_batch_limit,
+            poll_interval_seconds=app.config.telegram_poll_interval_seconds,
+        )
+        if args.once:
+            print(json.dumps(poller.run_once(), ensure_ascii=False, indent=2))
+            return 0
+        try:
+            poller.run_forever()
+        except KeyboardInterrupt:
+            print("poller_stopped")
         return 0
 
     if args.command == "dead-letter":
