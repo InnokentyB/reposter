@@ -12,6 +12,7 @@ class TelegramNormalizer:
             "text": post.text,
             "media": list(media),
             "entities": post.payload.get("entities", []),
+            "media_group_id": post.media_group_id,
         }
         return CanonicalPost(
             source_platform=Platform.TELEGRAM,

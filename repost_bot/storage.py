@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -17,21 +17,29 @@ def _utcnow() -> str:
 @dataclass(slots=True)
 class SqliteRepository:
     database_path: str
+    _shared_connection: sqlite3.Connection | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.database_path != ":memory:":
             Path(self.database_path).parent.mkdir(parents=True, exist_ok=True)
+        else:
+            self._shared_connection = sqlite3.connect(self.database_path)
+            self._shared_connection.row_factory = sqlite3.Row
         self._initialize()
 
     @contextmanager
     def connect(self):
-        connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
+        connection = self._shared_connection
+        owns_connection = connection is None
+        if connection is None:
+            connection = sqlite3.connect(self.database_path)
+            connection.row_factory = sqlite3.Row
         try:
             yield connection
             connection.commit()
         finally:
-            connection.close()
+            if owns_connection:
+                connection.close()
 
     def _initialize(self) -> None:
         with self.connect() as connection:
@@ -227,4 +235,3 @@ class SqliteRepository:
                     event.created_at.isoformat(timespec="seconds") if event.created_at else _utcnow(),
                 ),
             )
-
