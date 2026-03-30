@@ -8,6 +8,7 @@ from repost_bot.ok_adapter import OkPublisher
 from repost_bot.service import DeliveryWorker, HealthService, RepostOrchestrator
 from repost_bot.storage import SqliteRepository
 from repost_bot.telegram_adapter import TelegramUpdateAdapter
+from repost_bot.telegram_media import TelegramMediaClient
 from repost_bot.telegram_poller import TelegramBotApiClient, TelegramPollingLoop
 from repost_bot.threads_adapter import ThreadsPublisher
 from repost_bot.vk_adapter import VkPublisher
@@ -30,13 +31,17 @@ def build_application(config: AppConfig | None = None) -> Application:
     repository = SqliteRepository(resolved_config.database_path)
     repository.seed_default_destinations(threads_enabled=resolved_config.threads_enabled)
     telegram_adapter = TelegramUpdateAdapter(expected_channel_ids=resolved_config.telegram_channel_ids)
+    telegram_media_client = TelegramMediaClient(bot_token=resolved_config.telegram_bot_token)
     orchestrator = RepostOrchestrator(
         allowed_operators=set(resolved_config.allowed_operators),
         default_source_channel_id=resolved_config.telegram_channel_id,
         repository=repository,
     )
     publishers = {
-        Platform.VK: VkPublisher(credentials=resolved_config.vk),
+        Platform.VK: VkPublisher(
+            credentials=resolved_config.vk,
+            media_resolver=telegram_media_client.download_file,
+        ),
         Platform.OK: OkPublisher(credentials=resolved_config.ok),
     }
     if resolved_config.threads_enabled:

@@ -93,6 +93,56 @@ class VkPublisherTests(unittest.TestCase):
         with self.assertRaises(PermanentPublishError):
             publisher.publish({"text": "Photo post", "media": [{"type": "photo", "file_id": "tg-photo-1"}]})
 
+    def test_default_http_transport_uploads_photo_when_media_resolver_is_configured(self) -> None:
+        requests: list[tuple[str, bytes | None, dict | None]] = []
+
+        class _Response:
+            def __init__(self, payload: bytes) -> None:
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return self.payload
+
+        def fake_urlopen(request, timeout=0):
+            data = getattr(request, "data", None)
+            headers = dict(request.header_items()) if hasattr(request, "header_items") else {}
+            requests.append((request.full_url, data, headers))
+            if request.full_url.endswith("/photos.getWallUploadServer"):
+                return _Response(b'{"response":{"upload_url":"https://upload.vk.example/wall"}}')
+            if request.full_url == "https://upload.vk.example/wall":
+                return _Response(b'{"server":1,"photo":"[]","hash":"photo-hash"}')
+            if request.full_url.endswith("/photos.saveWallPhoto"):
+                return _Response(
+                    b'{"response":[{"owner_id":-12345,"id":67890,"sizes":[{"url":"https://vk.example/photo"}]}]}'
+                )
+            return _Response(b'{"response":{"post_id":456}}')
+
+        publisher = VkPublisher(
+            credentials=PlatformCredentials(target_id="12345", access_token="vk-secret"),
+            media_resolver=lambda file_id: {
+                "filename": "photo.jpg",
+                "content_type": "image/jpeg",
+                "content": b"fake-image-bytes",
+            },
+        )
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            result = publisher.publish(
+                {"text": "Photo VK", "media": [{"type": "photo", "file_id": "tg-photo-1"}]}
+            )
+
+        self.assertEqual(result.remote_post_id, "456")
+        self.assertTrue(any(url.endswith("/photos.getWallUploadServer") for url, _, _ in requests))
+        self.assertTrue(any(url == "https://upload.vk.example/wall" for url, _, _ in requests))
+        self.assertTrue(any(url.endswith("/photos.saveWallPhoto") for url, _, _ in requests))
+        self.assertTrue(any(url.endswith("/wall.post") for url, _, _ in requests))
+
 
 class RuntimePublisherWiringTests(unittest.TestCase):
     def test_build_application_wires_real_publishers_for_enabled_platforms(self) -> None:
