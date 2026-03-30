@@ -21,7 +21,7 @@ class Application:
 def build_application(config: AppConfig | None = None) -> Application:
     resolved_config = config or AppConfig.from_env()
     repository = SqliteRepository(resolved_config.database_path)
-    repository.seed_default_destinations()
+    repository.seed_default_destinations(threads_enabled=resolved_config.threads_enabled)
     telegram_adapter = TelegramUpdateAdapter(expected_channel_id=resolved_config.telegram_channel_id)
     orchestrator = RepostOrchestrator(
         allowed_operators=set(resolved_config.allowed_operators),

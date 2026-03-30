@@ -185,6 +185,20 @@ class SqliteRepository:
             ).fetchall()
         return [row["id"] for row in rows]
 
+    def get_destination_status(self, destination_id: str) -> str:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT status
+                FROM destinations
+                WHERE id = ?
+                """,
+                (destination_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(destination_id)
+        return str(row["status"])
+
     def get_source_post(self, source_post_id: str) -> CanonicalPost:
         with self.connect() as connection:
             row = connection.execute(

@@ -57,6 +57,7 @@ class AppConfig:
     app_env: str
     log_level: str
     database_path: str
+    threads_enabled: bool
     telegram_channel_id: str
     telegram_bot_token: str
     vk: PlatformCredentials
@@ -86,6 +87,7 @@ class AppConfig:
             app_env=app_env,
             log_level=log_level,
             database_path=_load_value("DATABASE_PATH", file_values, "var/repost-bot.sqlite3"),
+            threads_enabled=_load_value("THREADS_ENABLED", file_values, "false").lower() == "true",
             telegram_channel_id=_require("TELEGRAM_CHANNEL_ID", file_values),
             telegram_bot_token=_require("TELEGRAM_BOT_TOKEN", file_values),
             vk=PlatformCredentials(
@@ -108,6 +110,7 @@ class AppConfig:
             "app_env": self.app_env,
             "log_level": self.log_level,
             "database_path": self.database_path,
+            "threads_enabled": self.threads_enabled,
             "telegram_channel_id": self.telegram_channel_id,
             "telegram_bot_token": mask_secret(self.telegram_bot_token),
             "vk": self.vk.masked(),

@@ -16,6 +16,7 @@ class ConfigTests(unittest.TestCase):
                 "APP_ENV=dev",
                 "LOG_LEVEL=INFO",
                 "DATABASE_PATH=var/repost-bot.sqlite3",
+                "THREADS_ENABLED=false",
                 "TELEGRAM_CHANNEL_ID=tg-channel-1",
                 "TELEGRAM_BOT_TOKEN=telegram-secret-123",
                 "VK_COMMUNITY_ID=vk-community-1",
@@ -39,6 +40,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.app_env, "dev")
         self.assertEqual(config.log_level, "INFO")
         self.assertEqual(config.database_path, "var/repost-bot.sqlite3")
+        self.assertFalse(config.threads_enabled)
         self.assertEqual(config.allowed_operators, ("allowed-operator", "backup-operator"))
         self.assertEqual(config.vk.target_id, "vk-community-1")
 

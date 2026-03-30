@@ -180,6 +180,9 @@ class DeliveryWorker:
         if job.destination_id == "ok-destination" and Platform.OK in self.publishers:
             return self._publish_with_adapter(job, Platform.OK)
 
+        if job.destination_id == "threads-destination" and Platform.THREADS in self.publishers:
+            return self._publish_with_adapter(job, Platform.THREADS)
+
         if job.destination_id == "threads-destination":
             job.status = DeliveryStatus.PUBLISHED
             self._persist_job(job, remote_post_id=f"remote-{job.id}")
