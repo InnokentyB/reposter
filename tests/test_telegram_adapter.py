@@ -69,6 +69,26 @@ class TelegramUpdateAdapterTests(unittest.TestCase):
         self.assertIsNotNone(post)
         self.assertEqual(post.media_group_id, "album-42")
 
+    def test_parses_edited_channel_post_and_marks_it_as_edit_event(self) -> None:
+        update = {
+            "update_id": 7,
+            "edited_channel_post": {
+                "message_id": 1004,
+                "chat": {"id": "tg-channel-1", "type": "channel"},
+                "date": 1710000005,
+                "edit_date": 1710000100,
+                "text": "Edited text",
+            },
+        }
+
+        post = self.adapter.parse_update(update)
+
+        self.assertIsNotNone(post)
+        self.assertEqual(post.message_id, 1004)
+        self.assertEqual(post.text, "Edited text")
+        self.assertTrue(post.payload["is_edit"])
+        self.assertEqual(post.payload["update_type"], "edited_channel_post")
+
     def test_ignores_updates_from_other_channels(self) -> None:
         update = {
             "update_id": 4,

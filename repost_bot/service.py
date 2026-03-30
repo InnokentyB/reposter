@@ -26,6 +26,8 @@ class RepostOrchestrator:
     def ingest_telegram_post(self, post: TelegramPost) -> str:
         if not post.text or post.payload.get("chat_id") is None:
             return "validation_failed"
+        if post.payload.get("is_edit"):
+            return "edit_ignored"
 
         event_key = (post.chat_id, post.message_id)
         if event_key in self.processed_posts:

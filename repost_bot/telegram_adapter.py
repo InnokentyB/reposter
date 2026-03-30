@@ -11,7 +11,11 @@ class TelegramUpdateAdapter:
     expected_channel_id: str
 
     def parse_update(self, update: dict[str, Any]) -> TelegramPost | None:
+        update_type = "channel_post"
         channel_post = update.get("channel_post")
+        if not isinstance(channel_post, dict):
+            update_type = "edited_channel_post"
+            channel_post = update.get("edited_channel_post")
         if not isinstance(channel_post, dict):
             return None
 
@@ -41,6 +45,9 @@ class TelegramUpdateAdapter:
             "entities": entities,
             "media": media,
             "date": channel_post.get("date"),
+            "edit_date": channel_post.get("edit_date"),
+            "is_edit": update_type == "edited_channel_post",
+            "update_type": update_type,
         }
 
         return TelegramPost(

@@ -4,6 +4,7 @@ import unittest
 
 from repost_bot.contracts import DeliveryStatus, DestinationStatus, Platform
 from repost_bot.service import RepostOrchestrator
+from repost_bot.storage import SqliteRepository
 from tests.helpers import delivery_job, destination, telegram_post
 
 
@@ -62,7 +63,28 @@ class IngestionServiceTests(unittest.TestCase):
         self.assertEqual(current.status, DeliveryStatus.PUBLISHED)
         self.assertIn(result, {"source-100", "duplicate_ignored"})
 
+    def test_edited_post_is_ignored_without_creating_source_post_or_jobs(self) -> None:
+        repository = SqliteRepository(":memory:")
+        repository.seed_default_destinations()
+        orchestrator = RepostOrchestrator(repository=repository)
+        edited_post = telegram_post(
+            message_id=303,
+            text="Updated text",
+            payload={
+                "chat_id": "tg-channel-1",
+                "message_id": 303,
+                "text": "Updated text",
+                "entities": [],
+                "is_edit": True,
+                "update_type": "edited_channel_post",
+            },
+        )
+
+        result = orchestrator.ingest_telegram_post(edited_post)
+
+        self.assertEqual(result, "edit_ignored")
+        self.assertFalse(repository.source_post_exists("tg-channel-1", 303))
+
 
 if __name__ == "__main__":
     unittest.main()
-
